@@ -16,6 +16,7 @@ import { PrivacyPolicyScreen } from './src/screens/PrivacyPolicyScreen';
 import { ChatSupportScreen } from './src/screens/ChatSupportScreen';
 import { MessageScreen } from './src/screens/MessageScreen';
 import { BatchChatScreen } from './src/screens/BatchChatScreen';
+import { FeesScreen } from './src/screens/FeesScreen';
 import { TabBar } from './src/components/TabBar';
 import { colors } from './src/theme/Theme';
 import { storageService } from './src/services/storageService';
@@ -38,7 +39,8 @@ type TabName =
   | 'Students'
   | 'Chat'
   | 'Profile'
-  | 'My Batch';
+  | 'My Batch'
+  | 'Fees';
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -114,6 +116,13 @@ const App = () => {
     setCurrentScreen('Subject');
   };
 
+  const handleNavigateCourse = (subjectId: string, batchId?: string, batchName?: string) => {
+    if (batchId) setSelectedBatchId(batchId);
+    if (batchName) setSelectedBatchName(batchName);
+    setSelectedSubjectId(subjectId);
+    setCurrentScreen('Course');
+  };
+
   const handleNavigateStudent = (studentId: string) => {
     setSelectedStudentId(studentId);
     setCurrentScreen('StudentDetail');
@@ -134,13 +143,17 @@ const App = () => {
     }
 
     if (currentScreen === 'Subject') {
+      const displayBatchId = selectedBatchId || (userData?.role === 'student' ? (typeof userData.batchId === 'object' ? userData.batchId?._id : userData.batchId) : '');
+      const displayBatchName = selectedBatchName || (userData?.role === 'student' ? (typeof userData.batchId === 'object' ? userData.batchId?.name : undefined) : undefined);
+      
       return (
         <SubjectScreen
-          batchId={selectedBatchId || ''}
-          batchName={selectedBatchName || undefined}
+          batchId={displayBatchId || ''}
+          batchName={displayBatchName}
           onBack={() => setCurrentScreen('Main')}
           onNavigateCourse={handleNavigateSubject}
           isStudentRole={userData?.role === 'student'}
+          userData={userData}
         />
       );
     }
@@ -215,7 +228,11 @@ const App = () => {
                 (studentBatchId ? undefined : 'Unassigned Batch')
               }
               onBack={() => {}}
-              onNavigateCourse={handleNavigateSubject}
+              onNavigateCourse={(id) => {
+                setSelectedBatchId(studentBatchId);
+                setSelectedBatchName(studentBatchName);
+                handleNavigateSubject(id);
+              }}
               isStudentRole={true}
               userData={userData}
             />
@@ -239,6 +256,8 @@ const App = () => {
               onUpdateProfile={(updated: any) => setUserData(updated)}
             />
           );
+        case 'Fees':
+          return <FeesScreen userData={userData} />;
         default:
           const defaultBatchId =
             typeof userData.batchId === 'object'
@@ -319,7 +338,7 @@ const App = () => {
           <TabBar
             tabs={
               userData?.role === 'student'
-                ? ['My Batch', 'Chat', 'Profile']
+                ? ['My Batch', 'Fees', 'Chat', 'Profile']
                 : ['Dashboard', 'Batches', 'Students', 'Chat', 'Profile']
             }
             activeTab={activeTab}

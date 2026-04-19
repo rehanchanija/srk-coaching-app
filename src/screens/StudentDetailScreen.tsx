@@ -34,7 +34,9 @@ import { Input } from '../components/Input';
 import { Button } from '../components/Button';
 import { studentService, User } from '../services/studentService';
 import { batchService, Batch } from '../services/batchService';
+import feesService, { Fee } from '../services/feesService';
 import Toast from 'react-native-toast-message';
+import { Plus } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -64,11 +66,29 @@ export const StudentDetailScreen: React.FC<StudentDetailScreenProps> = ({
   const [batches, setBatches] = useState<Batch[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Fees State
+  const [fees, setFees] = useState<Fee[]>([]);
+  const [isFeeModalVisible, setIsFeeModalVisible] = useState(false);
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [targetMonth, setTargetMonth] = useState('');
+  const [targetAmount, setTargetAmount] = useState('');
+  const [targetStatus, setTargetStatus] = useState<'paid' | 'unpaid'>('paid');
+
 
 
   useEffect(() => {
     fetchStudentDetail();
+    fetchFees();
   }, [studentId]);
+
+  const fetchFees = async () => {
+    try {
+      const data = await feesService.getStudentFees(studentId);
+      setFees(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchStudentDetail = async () => {
     setLoading(true);
@@ -201,6 +221,51 @@ export const StudentDetailScreen: React.FC<StudentDetailScreenProps> = ({
     }
   };
 
+  const handleOpenFeeModal = () => {
+    const now = new Date();
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    setTargetMonth(monthStr);
+    setTargetAmount('');
+    setTargetStatus('paid');
+    setIsFeeModalVisible(true);
+  };
+
+  const handleSaveFee = async () => {
+    if (!targetMonth || !targetAmount) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Please enter month and amount',
+      });
+      return;
+    }
+
+    setFeeLoading(true);
+    try {
+      await feesService.createOrUpdateFee({
+        studentId,
+        month: targetMonth,
+        amount: Number(targetAmount),
+        status: targetStatus,
+      });
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Fee record saved',
+      });
+      setIsFeeModalVisible(false);
+      fetchFees();
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to save fee record',
+      });
+    } finally {
+      setFeeLoading(false);
+    }
+  };
+
   const initials =
     (student?.name || '')
       .split(' ')
@@ -279,10 +344,57 @@ export const StudentDetailScreen: React.FC<StudentDetailScreenProps> = ({
           </Card>
           <Card style={styles.infoCard}>
             <CreditCard color={colors.accent} size={20} />
-            <Text style={styles.cardValue}>N/A</Text>
+            <Text style={styles.cardValue}>
+              ₹{fees.filter(f => f.status === 'unpaid').reduce((acc, curr) => acc + curr.amount, 0)}
+            </Text>
             <Text style={styles.cardLabel}>Fee Due</Text>
           </Card>
         </View>
+
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Fees History</Text>
+          <TouchableOpacity onPress={handleOpenFeeModal} style={styles.addFeeMiniBtn}>
+            <Plus size={16} color={colors.primary} />
+            <Text style={styles.addFeeMiniText}>Add Fee</Text>
+          </TouchableOpacity>
+        </View>
+
+        {fees.length === 0 ? (
+          <Card variant="outline" style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No fee records found</Text>
+          </Card>
+        ) : (
+          fees.map((fee) => (
+            <Card key={fee._id} variant="outline" style={styles.feeListItem}>
+              <View style={styles.feeListContent}>
+                <View>
+                  <Text style={styles.feeMonthText}>
+                    {new Date(fee.month + '-02').toLocaleString('default', { month: 'long', year: 'numeric' })}
+                  </Text>
+                  <Text style={styles.feeAmountText}>₹{fee.amount}</Text>
+                </View>
+                <View style={styles.feeStatusColumn}>
+                  <View style={[
+                    styles.statusPill,
+                    { backgroundColor: fee.status === 'paid' ? colors.successLight : colors.warningLight }
+                  ]}>
+                    <Text style={[
+                      styles.statusPillText,
+                      { color: fee.status === 'paid' ? colors.success : colors.warning }
+                    ]}>
+                      {fee.status.toUpperCase()}
+                    </Text>
+                  </View>
+                  {fee.paidAt && (
+                    <Text style={styles.paidAtText}>
+                      {new Date(fee.paidAt).toLocaleDateString()}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </Card>
+          ))
+        )}
 
         <Text style={styles.sectionTitle}>Contact Details</Text>
         <Card variant="outline">
@@ -512,6 +624,131 @@ export const StudentDetailScreen: React.FC<StudentDetailScreenProps> = ({
               ))}
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+
+      {/* Fee Management Modal */}
+      <Modal
+        visible={isFeeModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsFeeModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setIsFeeModalVisible(false)}
+          />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.keyboardView}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalTitleRow}>
+                  <View style={styles.modalIconBox}>
+                    <CreditCard color={colors.primary} size={20} />
+                  </View>
+                  <Text style={typography.h2}>Manage Fee</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setIsFeeModalVisible(false)}
+                  style={styles.closeBtn}
+                >
+                  <X color="#94A3B8" size={20} strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={styles.modalBody}
+              >
+                <Input
+                  label="Month (YYYY-MM)"
+                  placeholder="e.g. 2024-05"
+                  value={targetMonth}
+                  onChangeText={setTargetMonth}
+                  icon={<Calendar size={18} color={colors.textMuted} />}
+                />
+
+                <Input
+                  label="Amount (₹)"
+                  placeholder="e.g. 500"
+                  value={targetAmount}
+                  onChangeText={setTargetAmount}
+                  keyboardType="numeric"
+                  icon={<CreditCard size={18} color={colors.textMuted} />}
+                />
+
+                <Text style={styles.fieldLabel}>Payment Status</Text>
+                <View style={styles.statusToggleContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.statusToggleBtn,
+                      targetStatus === 'paid' && { backgroundColor: colors.successLight, borderColor: colors.success }
+                    ]}
+                    onPress={() => setTargetStatus('paid')}
+                  >
+                    <Text style={[
+                      styles.statusToggleText,
+                      targetStatus === 'paid' && { color: colors.success }
+                    ]}>PAID</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.statusToggleBtn,
+                      targetStatus === 'unpaid' && { backgroundColor: colors.warningLight, borderColor: colors.warning }
+                    ]}
+                    onPress={() => setTargetStatus('unpaid')}
+                  >
+                    <Text style={[
+                      styles.statusToggleText,
+                      targetStatus === 'unpaid' && { color: colors.warning }
+                    ]}>UNPAID</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Suggestions */}
+                <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Quick Suggestions</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 8 }}>
+                  <TouchableOpacity 
+                    style={styles.suggestionPill}
+                    onPress={() => setTargetAmount('500')}
+                  >
+                    <Text style={styles.suggestionText}>₹500</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.suggestionPill}
+                    onPress={() => setTargetAmount('1000')}
+                  >
+                    <Text style={styles.suggestionText}>₹1000</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.suggestionPill}
+                    onPress={() => setTargetAmount('1500')}
+                  >
+                    <Text style={styles.suggestionText}>₹1500</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.suggestionPill}
+                    onPress={() => {
+                        const d = new Date();
+                        setTargetMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                    }}
+                  >
+                    <Text style={styles.suggestionText}>This Month</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </ScrollView>
+
+              <Button
+                title="Save Fee Record"
+                onPress={handleSaveFee}
+                loading={feeLoading}
+                style={styles.submitBtn}
+              />
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -778,4 +1015,107 @@ const styles = StyleSheet.create({
   },
   yearItemText: { fontSize: 16, fontWeight: '700', color: colors.text },
   selectedYearText: { color: '#FFF' },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 16,
+  },
+  addFeeMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  addFeeMiniText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  emptyCard: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderStyle: 'dashed',
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  feeListItem: {
+    marginBottom: 12,
+    padding: 16,
+  },
+  feeListContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  feeMonthText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  feeAmountText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textLight,
+    marginTop: 2,
+  },
+  feeStatusColumn: {
+    alignItems: 'flex-end',
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  paidAtText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  statusToggleContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  statusToggleBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  statusToggleText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  suggestionPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  suggestionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textLight,
+  },
 });

@@ -102,17 +102,25 @@ export const SubjectScreen: React.FC<SubjectScreenProps> = ({
   }, [activeTab]);
 
   const fetchInitialData = async () => {
+    if (!batchId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       try {
         const subjectsData = await subjectService.getByBatch(batchId);
         setSubjects(subjectsData);
-      } catch (subErr) {}
+      } catch (subErr) {
+        console.error('Error fetching subjects:', subErr);
+      }
 
       try {
         const batchInfo = await batchService.findById(batchId);
         setBatchDetail(batchInfo);
-      } catch (batchErr) {}
+      } catch (batchErr) {
+        console.error('Error fetching batch info:', batchErr);
+      }
     } catch (err: any) {
       Toast.show({
         type: 'error',
